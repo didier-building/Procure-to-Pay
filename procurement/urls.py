@@ -6,5 +6,5 @@ router = DefaultRouter()
 router.register(r'requests', PurchaseRequestViewSet, basename='requests')
 
 urlpatterns = [
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),
 ]

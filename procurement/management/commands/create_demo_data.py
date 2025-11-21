@@ -1,6 +1,8 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from decimal import Decimal
+from procurement.models import PurchaseRequest, RequestItem, Approval
 
 User = get_user_model()
 
@@ -71,6 +73,113 @@ class Command(BaseCommand):
                         self.style.SUCCESS(
                             f'Created {user_data["role"]} user: {user_data["username"]}/{user_data["password"]}'
                         )
+                    )
+
+            # Create sample procurement requests
+            staff_user = User.objects.get(username='staff1')
+            approver1_user = User.objects.get(username='approver1')
+            approver2_user = User.objects.get(username='approver2')
+            
+            sample_requests = [
+                {
+                    'title': 'Office Supplies Purchase',
+                    'description': 'Monthly office supplies including paper, pens, and stationery',
+                    'total_amount': Decimal('500.00'),
+                    'department': 'Administration',
+                    'items': [
+                        {'description': 'A4 Paper (10 reams)', 'quantity': 10, 'unit_price': Decimal('15.00')},
+                        {'description': 'Ballpoint Pens (100 pack)', 'quantity': 5, 'unit_price': Decimal('25.00')},
+                        {'description': 'Printer Cartridges', 'quantity': 4, 'unit_price': Decimal('75.00')},
+                    ]
+                },
+                {
+                    'title': 'IT Equipment Upgrade',
+                    'description': 'New laptops for development team',
+                    'total_amount': Decimal('3000.00'),
+                    'department': 'IT',
+                    'items': [
+                        {'description': 'Dell Laptop - Intel i7, 16GB RAM', 'quantity': 2, 'unit_price': Decimal('1500.00')},
+                    ]
+                },
+                {
+                    'title': 'Marketing Materials',
+                    'description': 'Brochures and business cards for Q1 campaign',
+                    'total_amount': Decimal('800.00'),
+                    'department': 'Marketing',
+                    'items': [
+                        {'description': 'Tri-fold Brochures (1000 pcs)', 'quantity': 1, 'unit_price': Decimal('400.00')},
+                        {'description': 'Business Cards (500 pcs)', 'quantity': 1, 'unit_price': Decimal('400.00')},
+                    ]
+                }
+            ]
+            
+            for req_data in sample_requests:
+                if not PurchaseRequest.objects.filter(title=req_data['title']).exists():
+                    # Create purchase request
+                    purchase_request = PurchaseRequest.objects.create(
+                        title=req_data['title'],
+                        description=req_data['description'],
+                        total_amount=req_data['total_amount'],
+                        department=req_data['department'],
+                        requested_by=staff_user
+                    )
+                    
+                    # Create request items
+                    for item_data in req_data['items']:
+                        RequestItem.objects.create(
+                            request=purchase_request,
+                            description=item_data['description'],
+                            quantity=item_data['quantity'],
+                            unit_price=item_data['unit_price'],
+                            total_price=item_data['quantity'] * item_data['unit_price']
+                        )
+                    
+                    # Create approval workflow (first level approved for demo)
+                    if req_data['title'] == 'Office Supplies Purchase':
+                        # First approval approved
+                        Approval.objects.create(
+                            request=purchase_request,
+                            approver=approver1_user,
+                            level=1,
+                            status='approved',
+                            comments='Approved for regular office supplies'
+                        )
+                        # Second approval pending
+                        Approval.objects.create(
+                            request=purchase_request,
+                            approver=approver2_user,
+                            level=2,
+                            status='pending',
+                            comments=''
+                        )
+                    elif req_data['title'] == 'IT Equipment Upgrade':
+                        # Both approvals pending (high value)
+                        Approval.objects.create(
+                            request=purchase_request,
+                            approver=approver1_user,
+                            level=1,
+                            status='pending',
+                            comments=''
+                        )
+                        Approval.objects.create(
+                            request=purchase_request,
+                            approver=approver2_user,
+                            level=2,
+                            status='pending',
+                            comments=''
+                        )
+                    else:
+                        # Marketing materials - first approval pending
+                        Approval.objects.create(
+                            request=purchase_request,
+                            approver=approver1_user,
+                            level=1,
+                            status='pending',
+                            comments=''
+                        )
+                    
+                    self.stdout.write(
+                        self.style.SUCCESS(f'Created procurement request: {req_data["title"]}')
                     )
 
         self.stdout.write(
