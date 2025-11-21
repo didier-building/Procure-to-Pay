@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${DB_NAME:-procuretopay}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_dev_password_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # ports:
+      # - "5444:5432"  # Not needed for internal communication
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-dev-only-secret-key-change-in-production-min-50-chars}
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-secure_dev_password_123}@db:5432/${DB_NAME:-procuretopay}
+      - DB_NAME=${DB_NAME:-procuretopay}
+      - DB_USER=${DB_USER:-postgres}  
+      - DB_PASSWORD=${DB_PASSWORD:-secure_dev_password_123}
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
