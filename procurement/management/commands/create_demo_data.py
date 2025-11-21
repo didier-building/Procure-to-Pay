@@ -83,9 +83,8 @@ class Command(BaseCommand):
             sample_requests = [
                 {
                     'title': 'Office Supplies Purchase',
-                    'description': 'Monthly office supplies including paper, pens, and stationery',
-                    'total_amount': Decimal('500.00'),
-                    'department': 'Administration',
+                    'description': 'Monthly office supplies including paper, pens, and stationery for Administration department',
+                    'amount': Decimal('500.00'),
                     'items': [
                         {'description': 'A4 Paper (10 reams)', 'quantity': 10, 'unit_price': Decimal('15.00')},
                         {'description': 'Ballpoint Pens (100 pack)', 'quantity': 5, 'unit_price': Decimal('25.00')},
@@ -94,18 +93,16 @@ class Command(BaseCommand):
                 },
                 {
                     'title': 'IT Equipment Upgrade',
-                    'description': 'New laptops for development team',
-                    'total_amount': Decimal('3000.00'),
-                    'department': 'IT',
+                    'description': 'New laptops for development team in IT department',
+                    'amount': Decimal('3000.00'),
                     'items': [
                         {'description': 'Dell Laptop - Intel i7, 16GB RAM', 'quantity': 2, 'unit_price': Decimal('1500.00')},
                     ]
                 },
                 {
                     'title': 'Marketing Materials',
-                    'description': 'Brochures and business cards for Q1 campaign',
-                    'total_amount': Decimal('800.00'),
-                    'department': 'Marketing',
+                    'description': 'Brochures and business cards for Q1 campaign - Marketing department',
+                    'amount': Decimal('800.00'),
                     'items': [
                         {'description': 'Tri-fold Brochures (1000 pcs)', 'quantity': 1, 'unit_price': Decimal('400.00')},
                         {'description': 'Business Cards (500 pcs)', 'quantity': 1, 'unit_price': Decimal('400.00')},
@@ -119,19 +116,17 @@ class Command(BaseCommand):
                     purchase_request = PurchaseRequest.objects.create(
                         title=req_data['title'],
                         description=req_data['description'],
-                        total_amount=req_data['total_amount'],
-                        department=req_data['department'],
-                        requested_by=staff_user
+                        amount=req_data['amount'],
+                        created_by=staff_user
                     )
                     
                     # Create request items
                     for item_data in req_data['items']:
                         RequestItem.objects.create(
                             request=purchase_request,
-                            description=item_data['description'],
+                            name=item_data['description'],
                             quantity=item_data['quantity'],
-                            unit_price=item_data['unit_price'],
-                            total_price=item_data['quantity'] * item_data['unit_price']
+                            unit_price=item_data['unit_price']
                         )
                     
                     # Create approval workflow (first level approved for demo)
@@ -141,16 +136,16 @@ class Command(BaseCommand):
                             request=purchase_request,
                             approver=approver1_user,
                             level=1,
-                            status='approved',
-                            comments='Approved for regular office supplies'
+                            approved=True,
+                            comment='Approved for regular office supplies'
                         )
                         # Second approval pending
                         Approval.objects.create(
                             request=purchase_request,
                             approver=approver2_user,
                             level=2,
-                            status='pending',
-                            comments=''
+                            approved=None,
+                            comment=''
                         )
                     elif req_data['title'] == 'IT Equipment Upgrade':
                         # Both approvals pending (high value)
@@ -158,15 +153,15 @@ class Command(BaseCommand):
                             request=purchase_request,
                             approver=approver1_user,
                             level=1,
-                            status='pending',
-                            comments=''
+                            approved=None,
+                            comment=''
                         )
                         Approval.objects.create(
                             request=purchase_request,
                             approver=approver2_user,
                             level=2,
-                            status='pending',
-                            comments=''
+                            approved=None,
+                            comment=''
                         )
                     else:
                         # Marketing materials - first approval pending
@@ -174,8 +169,8 @@ class Command(BaseCommand):
                             request=purchase_request,
                             approver=approver1_user,
                             level=1,
-                            status='pending',
-                            comments=''
+                            approved=None,
+                            comment=''
                         )
                     
                     self.stdout.write(

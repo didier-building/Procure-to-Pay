@@ -8,12 +8,14 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 def api_root(request):
     return JsonResponse({
         'message': 'IST Africa Procure-to-Pay API',
+        'version': '1.0',
         'endpoints': {
             'admin': '/admin/',
             'procurement_requests': '/api/procurement/requests/',
             'auth_token': '/api/token/',
             'auth_refresh': '/api/token/refresh/',
-        }
+        },
+        'documentation': 'Visit /admin/ for admin interface'
     })
 
 urlpatterns = [
