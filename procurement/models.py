@@ -31,9 +31,30 @@ class PurchaseRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # File uploads
     proforma = models.FileField(upload_to="proformas/", null=True, blank=True)
     purchase_order = models.FileField(upload_to="purchase_orders/", null=True, blank=True)
     receipt = models.FileField(upload_to="receipts/", null=True, blank=True)
+    
+    # AI processing data storage
+    proforma_data = models.JSONField(null=True, blank=True, help_text="AI-extracted data from proforma")
+    purchase_order_data = models.JSONField(null=True, blank=True, help_text="Generated PO data")
+    receipt_validation_data = models.JSONField(null=True, blank=True, help_text="Receipt validation results")
+    po_generated_at = models.DateTimeField(null=True, blank=True, help_text="When PO was generated")
+    
+    # Additional fields for enhanced functionality
+    department = models.CharField(max_length=100, blank=True, help_text="Requesting department")
+    urgency = models.CharField(
+        max_length=20, 
+        choices=[
+            ('LOW', 'Low'),
+            ('MEDIUM', 'Medium'),
+            ('HIGH', 'High'),
+            ('URGENT', 'Urgent')
+        ], 
+        default='MEDIUM'
+    )
+    justification = models.TextField(blank=True, help_text="Business justification for purchase")
 
     def __str__(self):
         return f"{self.title} ({self.status})"

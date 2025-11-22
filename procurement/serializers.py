@@ -42,6 +42,14 @@ class PurchaseRequestSerializer(serializers.ModelSerializer):
             "final_approved_by",
             "items",
             "approvals",
+            # New AI processing fields
+            "department",
+            "urgency", 
+            "justification",
+            "proforma_data",
+            "purchase_order_data",
+            "receipt_validation_data",
+            "po_generated_at",
         ]
 
 
@@ -50,7 +58,7 @@ class PurchaseRequestCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PurchaseRequest
-        fields = ["title", "description", "amount", "proforma", "items"]
+        fields = ["title", "description", "amount", "proforma", "items", "department", "urgency", "justification"]
 
     def create(self, validated_data):
         items_data = validated_data.pop("items", [])
@@ -66,7 +74,7 @@ class PurchaseRequestUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PurchaseRequest
-        fields = ["title", "description", "amount", "proforma", "items"]
+        fields = ["title", "description", "amount", "proforma", "items", "department", "urgency", "justification"]
 
     def validate(self, data):
         if self.instance.status != "PENDING":

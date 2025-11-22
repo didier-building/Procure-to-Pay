@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'drf_spectacular',  # API Documentation
 ]
 
 MIDDLEWARE = [
@@ -187,6 +188,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES' : (
         'rest_framework.permissions.IsAuthenticated',
         ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME' : timedelta(hours=6),
@@ -226,4 +228,60 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
+
+# DRF Spectacular (OpenAPI/Swagger) Configuration
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'IST Africa Procure-to-Pay API',
+    'DESCRIPTION': '''
+    A comprehensive procurement management system with AI-powered document processing.
+    
+    ## Features
+    - **Multi-level Approval Workflow**: Level 1 and Level 2 approvers
+    - **AI Document Processing**: Automatic proforma data extraction and PO generation  
+    - **Receipt Validation**: AI-powered receipt verification against purchase orders
+    - **File Management**: Upload and manage proforma invoices, POs, and receipts
+    - **JWT Authentication**: Secure API access with role-based permissions
+    
+    ## Authentication
+    This API uses JWT authentication. Include the token in the Authorization header:
+    `Authorization: Bearer <your_jwt_token>`
+    
+    ## Workflow
+    1. **Create Request**: Staff users create purchase requests with proforma uploads
+    2. **AI Processing**: System extracts data from proforma invoices
+    3. **Approval Process**: Level 1 then Level 2 approver review
+    4. **PO Generation**: Automatic purchase order creation for approved requests
+    5. **Receipt Upload**: Upload and validate receipts against purchase orders
+    ''',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'CONTACT': {
+        'name': 'IST Africa Technical Team',
+        'email': 'tech@ist-africa.org',
+    },
+    'LICENSE': {
+        'name': 'MIT License',
+    },
+    'TAGS': [
+        {
+            'name': 'Purchase Requests',
+            'description': 'CRUD operations for purchase requests'
+        },
+        {
+            'name': 'Approvals', 
+            'description': 'Multi-level approval workflow endpoints'
+        },
+        {
+            'name': 'AI Processing',
+            'description': 'AI-powered document processing and validation'
+        },
+        {
+            'name': 'Authentication',
+            'description': 'JWT token authentication endpoints'
+        }
+    ],
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
+}
+
+# This should be inside the production security block - let me check where this belongs
