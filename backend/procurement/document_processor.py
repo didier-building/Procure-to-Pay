@@ -85,6 +85,11 @@ class DocumentProcessor:
         """
         po_number = self._generate_po_number()
         
+        # Convert Decimal values to float for JSON serialization
+        total_amount = proforma_data.get('total_amount', 0)
+        if hasattr(total_amount, '__float__'):
+            total_amount = float(total_amount)
+        
         po_data = {
             'po_number': po_number,
             'vendor_name': proforma_data.get('vendor_name', 'Unknown Vendor'),
@@ -95,9 +100,9 @@ class DocumentProcessor:
                 'address': 'Kigali, Rwanda'  # Could be from settings
             },
             'items': proforma_data.get('items', []),
-            'subtotal': proforma_data.get('total_amount', Decimal('0.00')),
-            'tax_amount': Decimal('0.00'),  # Could calculate based on jurisdiction
-            'total_amount': proforma_data.get('total_amount', Decimal('0.00')),
+            'subtotal': total_amount,
+            'tax_amount': 0.00,  # Could calculate based on jurisdiction
+            'total_amount': total_amount,
             'currency': proforma_data.get('currency', 'USD'),
             'terms': self._generate_default_terms(),
             'delivery_date': self._calculate_delivery_date(),

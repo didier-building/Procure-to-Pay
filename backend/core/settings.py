@@ -70,7 +70,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'procurement',
+    
+    # Local apps
+    'authentication',  # Clean separation of auth logic
+    'procurement',     # Core business logic
+    
+    # Third party apps
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',

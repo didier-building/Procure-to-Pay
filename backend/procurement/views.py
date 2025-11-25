@@ -1,6 +1,9 @@
 import json
+import logging
 from django.db import transaction
 from django.utils import timezone
+from django.db.models import Count, Q, Case, When, IntegerField
+from django.core.exceptions import ValidationError
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -8,7 +11,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiResponse, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
-
+from rest_framework.decorators import api_view
+from .document_processor import document_processor
 from .models import PurchaseRequest, Approval
 from .serializers import (
     PurchaseRequestSerializer,
@@ -18,7 +22,30 @@ from .serializers import (
     RejectRequestSerializer,
     ReceiptUploadSerializer,
 )
-from .document_processor import document_processor
+
+logger = logging.getLogger(__name__)
+
+def _validate_file_security(uploaded_file):
+    """Validate uploaded file for security issues"""
+    if not uploaded_file:
+        return True
+        
+    # Check file size (max 10MB)
+    if uploaded_file.size > 10 * 1024 * 1024:
+        raise ValidationError("File size exceeds 10MB limit")
+    
+    # Check file extension
+    allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.txt']
+    file_name = uploaded_file.name.lower()
+    if not any(file_name.endswith(ext) for ext in allowed_extensions):
+        raise ValidationError("File type not allowed")
+    
+    # Prevent path traversal in filename
+    if '..' in file_name or '/' in file_name or '\\' in file_name:
+        raise ValidationError("Invalid filename")
+    
+    return True
+
 
 @extend_schema_view(
     list=extend_schema(
@@ -83,7 +110,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     
     Supports CRUD operations plus custom actions for approval workflow and AI processing.
     """
-    queryset = PurchaseRequest.objects.all().select_related('created_by')
+    queryset = PurchaseRequest.objects.none()  # Performance fix: use get_queryset for filtering
     permission_classes = [IsAuthenticated]
     lookup_field = 'pk'
 
@@ -97,12 +124,38 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         profile = getattr(user, 'profile', None)
+        
+        # Base queryset with optimized joins
+        base_queryset = PurchaseRequest.objects.select_related(
+            'created_by', 'approved_by'
+        ).prefetch_related('approvals__approver', 'items')
+        
         if profile and getattr(profile, 'role', None) == 'staff':
-            return self.queryset.filter(created_by=user).order_by('-created_at')
-        return self.queryset.order_by('-created_at')
+            return base_queryset.filter(created_by=user).order_by('-created_at')
+        return base_queryset.order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+    
+    def perform_update(self, serializer):
+        # CRITICAL FIX: Staff can only update their own requests
+        user = self.request.user
+        profile = getattr(user, 'profile', None)
+        if profile and getattr(profile, 'role', None) == 'staff':
+            if serializer.instance.created_by != user:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Can only update your own requests")
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        # CRITICAL FIX: Staff can only delete their own requests
+        user = self.request.user
+        profile = getattr(user, 'profile', None)
+        if profile and getattr(profile, 'role', None) == 'staff':
+            if instance.created_by != user:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Can only delete your own requests")
+        instance.delete()
 
     @extend_schema(
         summary="Approve Purchase Request",
@@ -139,7 +192,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         user = request.user
         profile = getattr(user, 'profile', None)
-        if not profile or not str(profile.role).startswith('approver'):
+        if not profile or profile.role not in ['approver1', 'approver2']:
             return Response({"detail":"Not authorized to approve."}, status=status.HTTP_403_FORBIDDEN)
 
         pr = get_object_or_404(PurchaseRequest, pk=pk)
@@ -152,12 +205,36 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             pr_locked = PurchaseRequest.objects.select_for_update().get(pk=pr.pk)
             if pr_locked.status != 'PENDING':
                 return Response({"detail":"Cannot approve non-pending request."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Check if this user/level already has an approval
+            existing_approval = Approval.objects.filter(request=pr_locked, level=level).first()
+            if existing_approval:
+                return Response({"detail":"Request has already been reviewed at this level."}, status=status.HTTP_400_BAD_REQUEST)
+                
             Approval.objects.create(request=pr_locked, approver=user, level=level, approved=True, comment=request.data.get('comment',''))
             if level == 2:
+                # CRITICAL FIX: Check Level 1 approval exists
+                level1_approval = Approval.objects.filter(
+                    request=pr_locked, level=1, approved=True
+                ).first()
+                if not level1_approval:
+                    return Response({
+                        "detail": "Level 1 approval required before Level 2"
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
                 pr_locked.status = 'APPROVED'
                 pr_locked.final_approved_by = user
                 pr_locked.save()
-                # TODO: generate PO sync/async (placeholder)
+                
+                # CRITICAL FIX: Auto-generate PO
+                try:
+                    self._auto_generate_po(pr_locked)
+                except (ValidationError, ValueError) as e:
+                    logger.error(f"PO generation failed for request {pr_locked.id}: {str(e)}")
+                except Exception as e:
+                    logger.exception(f"Unexpected error in PO generation for request {pr_locked.id}: {str(e)}")
+                    # Don't fail approval for PO generation errors
+                
                 return Response({"status":"APPROVED"}, status=status.HTTP_200_OK)
             return Response({"status":"PENDING", "message":"Level 1 approved; awaiting final approval."}, status=status.HTTP_200_OK)
 
@@ -192,7 +269,7 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         user = request.user
         profile = getattr(user, 'profile', None)
-        if not profile or not str(profile.role).startswith('approver'):
+        if not profile or profile.role not in ['approver1', 'approver2']:
             return Response({"detail":"Not authorized to reject."}, status=status.HTTP_403_FORBIDDEN)
 
         pr = get_object_or_404(PurchaseRequest, pk=pk)
@@ -204,6 +281,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             if pr_locked.status != 'PENDING':
                 return Response({"detail":"Cannot reject non-pending request."}, status=status.HTTP_400_BAD_REQUEST)
             lvl = 1 if profile.role == 'approver1' else 2
+            
+            # Check if this level already has an approval
+            existing_approval = Approval.objects.filter(request=pr_locked, level=lvl).first()
+            if existing_approval:
+                return Response({"detail":"Request has already been reviewed at this level."}, status=status.HTTP_400_BAD_REQUEST)
+                
             Approval.objects.create(request=pr_locked, approver=user, level=lvl, approved=False, comment=request.data.get('comment',''))
             pr_locked.status = 'REJECTED'
             pr_locked.save()
@@ -251,6 +334,23 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='submit-receipt')
     def submit_receipt(self, request, pk=None):
         pr = get_object_or_404(PurchaseRequest, pk=pk)
+        
+        # CRITICAL FIX: Ownership validation
+        if request.user != pr.created_by:
+            return Response({
+                "detail": "Can only submit receipts for your own requests"
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Security: Validate uploaded file
+        receipt_file = request.FILES.get('receipt')
+        if receipt_file:
+            try:
+                _validate_file_security(receipt_file)
+            except ValidationError as e:
+                return Response({
+                    "detail": str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = ReceiptUploadSerializer(instance=pr, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         
@@ -271,12 +371,19 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 )
                 
                 # Store validation results
-                updated_pr.receipt_validation_data = json.dumps(validation_result)
+                updated_pr.receipt_validation_data = validation_result
                 updated_pr.save()
                 
-            except Exception as e:
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.error(f"Invalid PO data for request {updated_pr.id}: {str(e)}")
                 validation_result = {
-                    'error': f'Receipt validation failed: {str(e)}',
+                    'error': 'Invalid purchase order data',
+                    'is_valid': False
+                }
+            except Exception as e:
+                logger.exception(f"Receipt validation failed for request {updated_pr.id}: {str(e)}")
+                validation_result = {
+                    'error': 'Receipt validation failed',
                     'is_valid': False
                 }
         
@@ -329,12 +436,20 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 'error': 'No proforma file uploaded'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Security: Validate proforma file
+        try:
+            _validate_file_security(pr.proforma)
+        except ValidationError as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         try:
             # Extract data from proforma using AI
             extracted_data = document_processor.extract_proforma_data(pr.proforma.file)
             
             # Store extracted data in the model
-            pr.proforma_data = json.dumps(extracted_data)
+            pr.proforma_data = extracted_data
             pr.save()
             
             return Response({
@@ -342,9 +457,15 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 'extracted_data': extracted_data
             }, status=status.HTTP_200_OK)
             
-        except Exception as e:
+        except (ValidationError, ValueError) as e:
+            logger.error(f"Proforma processing validation error for request {pr.id}: {str(e)}")
             return Response({
-                'error': f'Proforma processing failed: {str(e)}'
+                'error': 'Invalid proforma file format'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception(f"Proforma processing failed for request {pr.id}: {str(e)}")
+            return Response({
+                'error': 'Proforma processing failed'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @extend_schema(
@@ -478,6 +599,15 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         file = request.FILES['file']
+        
+        # Security: Validate uploaded file
+        try:
+            _validate_file_security(file)
+        except ValidationError as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
         analysis_type = request.data.get('type', 'proforma')  # proforma, receipt, or generic
         
         try:
@@ -492,12 +622,18 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 }
                 result = document_processor.validate_receipt(file, dummy_po)
             else:
-                # Generic text extraction
-                text = document_processor._extract_text_from_file(file)
-                result = {
-                    'extracted_text': text,
-                    'analysis': 'Generic document analysis completed'
-                }
+                # Generic text extraction - use public method
+                try:
+                    result = document_processor.extract_proforma_data(file)
+                    result = {
+                        'extracted_text': result.get('raw_text', ''),
+                        'analysis': 'Generic document analysis completed'
+                    }
+                except Exception:
+                    result = {
+                        'extracted_text': 'Text extraction failed',
+                        'analysis': 'Generic document analysis failed'
+                    }
             
             return Response({
                 'message': 'Document analyzed successfully',
@@ -505,8 +641,96 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                 'result': result
             }, status=status.HTTP_200_OK)
             
-        except Exception as e:
+        except (ValidationError, ValueError) as e:
+            logger.error(f"Document analysis validation error: {str(e)}")
             return Response({
-                'error': f'Document analysis failed: {str(e)}'
+                'error': 'Invalid document format'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception(f"Document analysis failed: {str(e)}")
+            return Response({
+                'error': 'Document analysis failed'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        return Response({"status":"RECEIPT_UPLOADED"}, status=status.HTTP_200_OK)
+    
+    def _auto_generate_po(self, purchase_request):
+        """Auto-generate PO when request is fully approved"""
+        try:
+            # Load proforma data if available
+            proforma_data = {}
+            if purchase_request.proforma_data:
+                if isinstance(purchase_request.proforma_data, str):
+                    proforma_data = json.loads(purchase_request.proforma_data)
+                else:
+                    proforma_data = purchase_request.proforma_data
+            
+            # Use request amount if no proforma data
+            if not proforma_data.get('total_amount'):
+                proforma_data['total_amount'] = float(purchase_request.amount)
+                proforma_data['vendor_name'] = 'TBD - Vendor'
+                proforma_data['currency'] = 'USD'
+            
+            # Prepare request data
+            request_data = {
+                'created_by': purchase_request.created_by.username,
+                'title': purchase_request.title,
+                'amount': str(purchase_request.amount)
+            }
+            
+            # Generate PO data
+            po_data = document_processor.generate_purchase_order_data(proforma_data, request_data)
+            
+            # Store PO data
+            purchase_request.purchase_order_data = po_data
+            purchase_request.save()
+            
+            logger.info(f"PO generated successfully for request {purchase_request.id}")
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Invalid proforma data for PO generation in request {purchase_request.id}: {str(e)}")
+            raise ValidationError("Invalid proforma data")
+        except Exception as e:
+            logger.exception(f"PO generation failed for request {purchase_request.id}: {str(e)}")
+            raise
+
+
+@api_view(['GET'])
+@extend_schema(
+    summary="Dashboard Statistics",
+    description="Get procurement dashboard statistics including total, pending, approved, and rejected requests",
+    tags=["Dashboard"],
+    responses={
+        200: OpenApiResponse(
+            description="Dashboard statistics",
+            examples=[
+                OpenApiExample(
+                    name="Stats Response",
+                    value={
+                        "total_requests": 25,
+                        "pending_requests": 8,
+                        "approved_requests": 15,
+                        "rejected_requests": 2
+                    }
+                )
+            ]
+        )
+    }
+)
+def dashboard_stats(request):
+    """Get dashboard statistics for procurement requests"""
+    user = request.user
+    
+    # Get base queryset based on user role
+    base_queryset = PurchaseRequest.objects.all()
+    profile = getattr(user, 'profile', None)
+    if profile and getattr(profile, 'role', None) == 'staff':
+        base_queryset = base_queryset.filter(created_by=user)
+    
+    # Performance optimization: Single aggregated query
+    stats_data = base_queryset.aggregate(
+        total_requests=Count('id'),
+        pending_requests=Count(Case(When(status='PENDING', then=1), output_field=IntegerField())),
+        approved_requests=Count(Case(When(status='APPROVED', then=1), output_field=IntegerField())),
+        rejected_requests=Count(Case(When(status='REJECTED', then=1), output_field=IntegerField()))
+    )
+    
+    return Response(stats_data)

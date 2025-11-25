@@ -27,7 +27,12 @@ def api_root(request):
 urlpatterns = [
     path('', api_root, name='api_root'),
     path('admin/', admin.site.urls),
-    path('api/procurement/', include('procurement.urls')),
+    
+    # API endpoints - Clean app separation
+    path('api/auth/', include('authentication.urls')),  # Authentication app
+    path('api/procurement/', include('procurement.urls')),  # Procurement app
+    
+    # JWT Token endpoints (legacy support)
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     

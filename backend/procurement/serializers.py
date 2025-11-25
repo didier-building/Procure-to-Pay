@@ -20,61 +20,57 @@ class ApprovalSerializer(serializers.ModelSerializer):
 
 
 class PurchaseRequestSerializer(serializers.ModelSerializer):
+    """Main serializer for PurchaseRequest - matches original spec exactly"""
     created_by = serializers.StringRelatedField()
-    items = RequestItemSerializer(many=True, read_only=True)
-    approvals = ApprovalSerializer(many=True, read_only=True)
-    final_approved_by = serializers.StringRelatedField(read_only=True)
+    approved_by = serializers.StringRelatedField(read_only=True)
+    items = RequestItemSerializer(many=True, read_only=True)  # Optional from spec
+    approvals = ApprovalSerializer(many=True, read_only=True)  # Optional from spec
 
     class Meta:
         model = PurchaseRequest
         fields = [
             "id",
-            "title",
+            "title", 
             "description",
             "amount",
             "status",
             "created_by",
-            "created_at",
+            "approved_by",
+            "created_at", 
             "updated_at",
             "proforma",
-            "purchase_order",
+            "purchase_order", 
             "receipt",
-            "final_approved_by",
-            "items",
-            "approvals",
-            # New AI processing fields
-            "department",
-            "urgency", 
-            "justification",
+            "items",  # Optional
+            "approvals",  # Optional
+            # AI processing fields for document processing feature
             "proforma_data",
             "purchase_order_data",
             "receipt_validation_data",
-            "po_generated_at",
         ]
 
 
 class PurchaseRequestCreateSerializer(serializers.ModelSerializer):
-    items = RequestItemSerializer(many=True)
-
+    """Simple create serializer matching original requirements"""
+    proforma = serializers.FileField(required=False)
+    
     class Meta:
-        model = PurchaseRequest
-        fields = ["title", "description", "amount", "proforma", "items", "department", "urgency", "justification"]
+        model = PurchaseRequest  
+        fields = ["title", "description", "amount", "proforma"]
 
     def create(self, validated_data):
-        items_data = validated_data.pop("items", [])
         user = self.context["request"].user
-        pr = PurchaseRequest.objects.create(created_by=user, **validated_data)
-        for item in items_data:
-            RequestItem.objects.create(request=pr, **item)
-        return pr
+        # Remove created_by from validated_data if it exists to avoid conflicts
+        validated_data.pop('created_by', None)
+        return PurchaseRequest.objects.create(created_by=user, **validated_data)
 
 
 class PurchaseRequestUpdateSerializer(serializers.ModelSerializer):
-    items = RequestItemSerializer(many=True)
+    items = RequestItemSerializer(many=True, required=False)
 
     class Meta:
         model = PurchaseRequest
-        fields = ["title", "description", "amount", "proforma", "items", "department", "urgency", "justification"]
+        fields = ["title", "description", "amount", "proforma", "items"]
 
     def validate(self, data):
         if self.instance.status != "PENDING":
