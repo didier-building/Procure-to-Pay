@@ -217,8 +217,14 @@ else:
     if cors_origins_env:
         CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
     else:
-        CORS_ALLOWED_ORIGINS = []  # No CORS in production unless explicitly set
-    CORS_ALLOW_ALL_ORIGINS = False
+        # Default production CORS for common deployment platforms
+        CORS_ALLOWED_ORIGINS = [
+            "https://netlify.app",
+            "https://*.netlify.app", 
+            "https://vercel.app",
+            "https://*.vercel.app"
+        ]
+    CORS_ALLOW_ALL_ORIGINS = True  # Temporary for deployment testing
 
 # Security settings for production
 if not DEBUG:
