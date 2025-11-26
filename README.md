@@ -209,11 +209,16 @@ DATABASE_URL=postgresql://...
 SECRET_KEY=your-secret-key
 ALLOWED_HOSTS=procure-to-pay-backend.onrender.com
 CORS_ALLOWED_ORIGINS=https://ist-africa-procumet-o-pay.netlify.app
+DB_NAME=your_db_name
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_HOST=your_db_host
+DB_PORT=5432
 ```
 
 **Frontend (.env)**
 ```bash
-VITE_API_BASE_URL=https://procure-to-pay-backend.onrender.com
+VITE_API_URL=https://procure-to-pay-backend.onrender.com
 VITE_APP_NAME=IST Africa Procure-to-Pay
 ```
 

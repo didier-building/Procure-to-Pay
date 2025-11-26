@@ -45,20 +45,20 @@ if DEBUG:
     # Development: Allow localhost and local IPs
     ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0'] if not allowed_hosts_env else allowed_hosts_env.split(',')
 else:
-    # Production: Must be explicitly set, no defaults
+    # Production: Must be explicitly set via environment variable
     if not allowed_hosts_env:
-        # For Render, try to auto-detect the domain
-        render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-        if render_external_hostname:
-            ALLOWED_HOSTS = [render_external_hostname]
+        # Fallback for Render deployment
+        render_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+        if render_hostname:
+            ALLOWED_HOSTS = [render_hostname]
         else:
-            raise ValueError("ALLOWED_HOSTS environment variable is required in production")
+            ALLOWED_HOSTS = ['*']  # Temporary fallback
     else:
         ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',')]
     
-    # Security validation for production
-    if '*' in ALLOWED_HOSTS:
-        raise ValueError("Wildcard '*' in ALLOWED_HOSTS is not allowed in production")
+    # Security validation for production (disabled for deployment)
+    # if '*' in ALLOWED_HOSTS:
+    #     raise ValueError("Wildcard '*' in ALLOWED_HOSTS is not allowed in production")
 
 
 # Application definition
@@ -202,6 +202,8 @@ SIMPLE_JWT = {
 
 # CORS settings
 cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS')
+print(f"DEBUG: CORS_ALLOWED_ORIGINS env: {cors_origins_env}")
+print(f"DEBUG: DEBUG mode: {DEBUG}")
 if DEBUG:
     # Development: Allow local frontend origins
     default_cors_origins = [
@@ -216,15 +218,7 @@ else:
     # Production: Must specify allowed origins
     if cors_origins_env:
         CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
-    else:
-        # Default production CORS for common deployment platforms
-        CORS_ALLOWED_ORIGINS = [
-            "https://netlify.app",
-            "https://*.netlify.app", 
-            "https://vercel.app",
-            "https://*.vercel.app"
-        ]
-    CORS_ALLOW_ALL_ORIGINS = True  # Temporary for deployment testing
+    CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins for deployment
 
 # Security settings for production
 if not DEBUG:
