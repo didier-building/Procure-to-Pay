@@ -96,7 +96,7 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
     formData.append('receipt', file)
 
     try {
-      const response = await axios.post(`/api/procurement/requests/${request.id}/submit-receipt/`, formData, {
+      await axios.post(`/api/procurement/requests/${request.id}/submit-receipt/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
       
@@ -111,7 +111,7 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
     if (!request) return
 
     try {
-      const response = await axios.post(`/api/procurement/requests/${request.id}/generate-purchase-order/`)
+      await axios.post(`/api/procurement/requests/${request.id}/generate-purchase-order/`)
       alert('Purchase Order generated successfully!')
       fetchRequestDetails() // Refresh data
     } catch (error: any) {
