@@ -43,6 +43,7 @@ class PurchaseRequest(models.Model):
     proforma_data = models.JSONField(null=True, blank=True, help_text="AI-extracted data from proforma")
     purchase_order_data = models.JSONField(null=True, blank=True, help_text="Generated PO data")
     receipt_validation_data = models.JSONField(null=True, blank=True, help_text="Receipt validation results")
+    po_generated_at = models.DateTimeField(null=True, blank=True, help_text="When PO was generated")
 
     def __str__(self):
         return f"{self.title} ({self.status})"

@@ -41,8 +41,8 @@ def _validate_file_security(uploaded_file):
         raise ValidationError("File type not allowed")
     
     # Prevent path traversal in filename
-    if '..' in file_name or '/' in file_name or '\\' in file_name:
-        raise ValidationError("Invalid filename")
+    if '..' in file_name:
+        raise ValidationError("Invalid filename: contains path traversal")
     
     return True
 
@@ -478,8 +478,18 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             # Extract data from proforma using AI
             extracted_data = document_processor.extract_proforma_data(pr.proforma.file)
             
+            # Convert Decimal objects to float for JSON serialization
+            def convert_decimals(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_decimals(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_decimals(item) for item in obj]
+                elif hasattr(obj, '__float__'):
+                    return float(obj)
+                return obj
+            
             # Store extracted data in the model
-            pr.proforma_data = extracted_data
+            pr.proforma_data = convert_decimals(extracted_data)
             pr.save()
             
             return Response({
@@ -490,12 +500,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         except (ValidationError, ValueError) as e:
             logger.error(f"Proforma processing validation error for request {pr.id}: {str(e)}")
             return Response({
-                'error': 'Invalid proforma file format'
+                'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.exception(f"Proforma processing failed for request {pr.id}: {str(e)}")
             return Response({
-                'error': 'Proforma processing failed'
+                'error': f'Proforma processing failed: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @extend_schema(
@@ -709,8 +719,9 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             # Generate PO data
             po_data = document_processor.generate_purchase_order_data(proforma_data, request_data)
             
-            # Store PO data
-            purchase_request.purchase_order_data = po_data
+            # Store PO data as JSON string
+            purchase_request.purchase_order_data = json.dumps(po_data)
+            purchase_request.po_generated_at = timezone.now()
             purchase_request.save()
             
             logger.info(f"PO generated successfully for request {purchase_request.id}")

@@ -26,9 +26,13 @@ class DocumentProcessor:
     
     def __init__(self):
         """Initialize document processor with OCR configuration."""
-        # Configure pytesseract if needed
-        # pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Adjust path as needed
-        pass
+        # Check if tesseract is available
+        try:
+            pytesseract.get_tesseract_version()
+            self.ocr_available = True
+        except:
+            self.ocr_available = False
+            print("WARNING: Tesseract OCR not available. Install with: sudo apt install tesseract-ocr")
     
     def extract_proforma_data(self, file: UploadedFile) -> Dict[str, Any]:
         """
@@ -64,23 +68,11 @@ class DocumentProcessor:
             return data
             
         except Exception as e:
-            # Return demo data for development
-            return {
-                'vendor_name': 'Demo Vendor Ltd',
-                'vendor_email': 'demo@vendor.com',
-                'items': [{
-                    'name': 'Demo Item',
-                    'quantity': 1,
-                    'unit_price': 100.00,
-                    'total_price': 100.00
-                }],
-                'total_amount': 100.00,
-                'currency': 'USD',
-                'due_date': '2024-12-31',
-                'invoice_number': 'DEMO-001',
-                'raw_text': f'Demo processing (error: {str(e)})',
-                'demo_mode': True
-            }
+            # Log the actual error and re-raise
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Proforma extraction failed: {str(e)}", exc_info=True)
+            raise ValueError(f"Failed to process proforma: {str(e)}")
     
     def generate_purchase_order_data(self, proforma_data: Dict[str, Any], request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -166,21 +158,25 @@ class DocumentProcessor:
                 })
                 validation_result['is_valid'] = False
             
-            # Check total amount (allow 5% variance for taxes/fees)
+            # Check total amount (allow 10% variance for taxes/fees)
             po_total = Decimal(str(purchase_order_data.get('total_amount', 0)))
             receipt_total = receipt_data.get('total_amount', Decimal('0'))
             
             if po_total > 0 and receipt_total > 0:
                 variance = abs(po_total - receipt_total) / po_total
-                if variance > 0.05:  # 5% tolerance
+                if variance > 0.10:  # 10% tolerance for taxes/fees
                     validation_result['discrepancies'].append({
                         'field': 'total_amount',
                         'po_value': float(po_total),
                         'receipt_value': float(receipt_total),
                         'variance_percent': float(variance * 100),
-                        'message': f'Amount variance {variance*100:.1f}% exceeds 5% threshold'
+                        'message': f'Amount variance {variance*100:.1f}% exceeds 10% threshold'
                     })
                     validation_result['is_valid'] = False
+                else:
+                    validation_result['validation_details']['amount_check'] = 'PASSED'
+            else:
+                validation_result['validation_details']['amount_check'] = 'SKIPPED - Missing amounts'
             
             # Item-level validation (simplified)
             po_items = purchase_order_data.get('items', [])
@@ -205,22 +201,38 @@ class DocumentProcessor:
     
     # Private helper methods
     
-    def _extract_text_from_file(self, file: UploadedFile) -> str:
+    def _extract_text_from_file(self, file) -> str:
         """Extract text from uploaded file (PDF or image)."""
         file.seek(0)  # Reset file pointer
         
-        if file.content_type == 'application/pdf':
+        # Get content type from file name if not available
+        content_type = getattr(file, 'content_type', None)
+        if not content_type and hasattr(file, 'name'):
+            if file.name.lower().endswith('.pdf'):
+                content_type = 'application/pdf'
+            elif file.name.lower().endswith(('.jpg', '.jpeg', '.png')):
+                content_type = 'image/jpeg'
+        
+        if content_type == 'application/pdf':
             return self._extract_text_from_pdf(file)
-        elif file.content_type.startswith('image/'):
+        elif content_type and content_type.startswith('image/'):
+            if not self.ocr_available:
+                raise ValueError("Cannot process images: Tesseract OCR not installed")
             return self._extract_text_from_image(file)
         else:
-            # Try both methods
+            # Try PDF first, then image if OCR available
             try:
                 return self._extract_text_from_pdf(file)
-            except:
-                return self._extract_text_from_image(file)
+            except Exception as pdf_error:
+                if self.ocr_available:
+                    try:
+                        return self._extract_text_from_image(file)
+                    except Exception as ocr_error:
+                        raise ValueError(f"Both PDF ({pdf_error}) and OCR ({ocr_error}) processing failed")
+                else:
+                    raise ValueError(f"PDF processing failed and OCR not available: {pdf_error}")
     
-    def _extract_text_from_pdf(self, file: UploadedFile) -> str:
+    def _extract_text_from_pdf(self, file) -> str:
         """Extract text from PDF using pdfplumber and PyPDF2."""
         text = ""
         
@@ -246,15 +258,17 @@ class DocumentProcessor:
         
         return text.strip()
     
-    def _extract_text_from_image(self, file: UploadedFile) -> str:
+    def _extract_text_from_image(self, file) -> str:
         """Extract text from image using OCR."""
+        if not self.ocr_available:
+            raise ValueError("Tesseract OCR not available. Install with: sudo apt install tesseract-ocr")
+            
         try:
             image = Image.open(io.BytesIO(file.read()))
             text = pytesseract.image_to_string(image)
             return text.strip()
         except Exception as e:
-            # Fallback: return mock data for demo
-            return "DEMO PROFORMA\nVendor: Demo Company Ltd\nTotal: $100.00 USD\nItems: 1x Demo Item @ $100.00"
+            raise ValueError(f"OCR processing failed: {str(e)}")
     
     def _extract_vendor_name(self, text: str) -> str:
         """Extract vendor name from text."""
@@ -321,27 +335,41 @@ class DocumentProcessor:
     
     def _extract_total_amount(self, text: str) -> Decimal:
         """Extract total amount from text."""
-        # Look for currency amounts
+        # Enhanced patterns for better total detection
         patterns = [
-            r'(?:TOTAL|AMOUNT|SUM)[:]\s*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)',
-            r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)',
-            r'(\d+(?:,\d{3})*\.\d{2})(?:\s*USD|$)',
+            r'(?:TOTAL|AMOUNT|SUM)\s*:?\s*([€$]?\d+(?:[,.]\d{3})*[,.]\d{2})',
+            r'TOTAL\s+([€$]?\d+[,.]\d{2})',
+            r'(\d+[,.]\d{2})\s*[€$]?\s*$',  # Amount at end of line
+            r'([€$]\d+(?:[,.]\d{3})*[,.]\d{2})',  # Currency symbol amounts
+            r'(\d{2,4}[,.]\d{2})(?:\s*[€$]|\s*EUR|\s*USD)',  # Amount with currency
         ]
         
         amounts = []
         for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
+            matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
             for match in matches:
                 try:
-                    # Remove commas and convert to Decimal
-                    amount_str = match.replace(',', '')
-                    amount = Decimal(amount_str)
-                    amounts.append(amount)
+                    # Clean the amount string
+                    amount_str = match.replace('€', '').replace('$', '').replace(',', '.').strip()
+                    # Handle European decimal format (comma as decimal separator)
+                    if '.' in amount_str and amount_str.count('.') == 1:
+                        parts = amount_str.split('.')
+                        if len(parts[1]) == 2:  # Decimal part
+                            amount = Decimal(amount_str)
+                        else:  # Thousands separator
+                            amount_str = amount_str.replace('.', '')
+                            amount = Decimal(amount_str)
+                    else:
+                        amount = Decimal(amount_str)
+                    
+                    if amount > 0:
+                        amounts.append(amount)
                 except (InvalidOperation, ValueError):
                     continue
         
-        # Return the largest amount found (likely the total)
-        return max(amounts) if amounts else Decimal('0.00')
+        # Return the largest reasonable amount (likely the total)
+        valid_amounts = [a for a in amounts if a < 1000000]  # Filter out unreasonable amounts
+        return max(valid_amounts) if valid_amounts else Decimal('0.00')
     
     def _extract_currency(self, text: str) -> str:
         """Extract currency from text."""

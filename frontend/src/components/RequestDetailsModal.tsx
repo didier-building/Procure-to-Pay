@@ -238,14 +238,21 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
                     {/* PO Generation & Receipt Upload for Approved Requests */}
                     {request.status === 'APPROVED' && (
                       <div className="pt-4 border-t space-y-3">
-                        {/* Generate PO Button */}
+                        {/* PO Status or Generate Button */}
                         <div>
-                          <button
-                            onClick={handleGeneratePO}
-                            className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                          >
-                            Generate Purchase Order
-                          </button>
+                          {request.purchase_order_data ? (
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                              <p className="text-green-800 font-medium">✅ Purchase Order Generated</p>
+                              <p className="text-green-600 text-sm mt-1">PO ready for receipt validation</p>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={handleGeneratePO}
+                              className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                              Generate Purchase Order
+                            </button>
+                          )}
                         </div>
                         
                         {/* Receipt Upload for Staff */}

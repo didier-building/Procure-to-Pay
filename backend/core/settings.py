@@ -202,8 +202,6 @@ SIMPLE_JWT = {
 
 # CORS settings
 cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS')
-print(f"DEBUG: CORS_ALLOWED_ORIGINS env: {cors_origins_env}")
-print(f"DEBUG: DEBUG mode: {DEBUG}")
 if DEBUG:
     # Development: Allow local frontend origins
     default_cors_origins = [
