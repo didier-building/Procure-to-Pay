@@ -37,13 +37,25 @@ export default function CreateRequest() {
         formData.append('proforma', uploadedFile)
       }
 
-      await axios.post('/api/procurement/requests/', formData, {
+      const response = await axios.post('/api/procurement/requests/', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       })
 
-      toast.success('Request created successfully!')
+      // Auto-process proforma if uploaded
+      if (uploadedFile && response.data.id) {
+        try {
+          await axios.post(`/api/procurement/requests/${response.data.id}/process-proforma/`)
+          toast.success('Request created and proforma processed successfully!')
+        } catch (error) {
+          toast.success('Request created successfully!')
+          toast.error('Proforma processing failed - you can retry later')
+        }
+      } else {
+        toast.success('Request created successfully!')
+      }
+      
       navigate('/requests')
     } catch (error) {
       toast.error('Failed to create request. Please try again.')

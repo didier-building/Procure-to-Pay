@@ -57,7 +57,7 @@ class Approval(models.Model):
     request = models.ForeignKey(
         PurchaseRequest, related_name="approvals", on_delete=models.CASCADE
     )
-    approver = models.ForeignKey(User, on_delete=models.CASCADE)
+    approver = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     level = models.IntegerField(choices=LEVEL_CHOICES)
     approved = models.BooleanField(null=True)  # True=approved, False=rejected, None=pending
     comment = models.TextField(blank=True)

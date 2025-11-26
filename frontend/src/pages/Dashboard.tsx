@@ -241,13 +241,15 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick Actions</h2>
             
             <div className="space-y-3">
-              <Link
-                to="/requests/create"
-                className="flex items-center p-3 rounded-lg bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors group"
-              >
-                <PlusIcon className="h-5 w-5 mr-3" />
-                <span className="font-medium">Create New Request</span>
-              </Link>
+              {user?.role === 'staff' && (
+                <Link
+                  to="/requests/create"
+                  className="flex items-center p-3 rounded-lg bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors group"
+                >
+                  <PlusIcon className="h-5 w-5 mr-3" />
+                  <span className="font-medium">Create New Request</span>
+                </Link>
+              )}
               
               <Link
                 to="/requests"

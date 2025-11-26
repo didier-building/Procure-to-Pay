@@ -9,11 +9,21 @@ import {
 } from '@heroicons/react/24/outline'
 import { useAuth } from '../hooks/useAuth'
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-  { name: 'Requests', href: '/requests', icon: DocumentTextIcon },
-  { name: 'Create Request', href: '/requests/create', icon: PlusIcon },
-]
+const getNavigation = (userRole: string | undefined) => {
+  const baseNav = [
+    { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+    { name: 'Requests', href: '/requests', icon: DocumentTextIcon },
+  ]
+  
+  // Only staff can create requests
+  if (userRole === 'staff') {
+    baseNav.push({ name: 'Create Request', href: '/requests/create', icon: PlusIcon })
+  }
+  
+
+  
+  return baseNav
+}
 
 export default function Navbar() {
   const location = useLocation()
@@ -41,7 +51,7 @@ export default function Navbar() {
         {/* Navigation */}
         <nav className="flex-1 px-4 py-6">
           <ul className="space-y-2">
-            {navigation.map((item, index) => {
+            {getNavigation(user?.role).map((item, index) => {
               const isActive = location.pathname === item.href
               
               return (

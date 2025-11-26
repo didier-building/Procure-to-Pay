@@ -34,7 +34,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', '')
         )
         
-        UserProfile.objects.get_or_create(user=user, defaults={'role': role})
+        # Ensure correct role is set
+        profile, created = UserProfile.objects.get_or_create(user=user, defaults={'role': role})
+        if not created and profile.role != role:
+            profile.role = role
+            profile.save()
         return user
 
 class UserLoginSerializer(serializers.Serializer):

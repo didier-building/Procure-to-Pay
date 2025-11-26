@@ -20,6 +20,14 @@ interface Request {
   created_at: string
   amount: number
   created_by: string
+  approvals?: Array<{
+    id: number
+    level: number
+    approved: boolean
+    approved_by: string
+    comment: string
+    created_at: string
+  }>
 }
 
 export default function Requests() {
@@ -30,11 +38,7 @@ export default function Requests() {
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   
-  const canApprove = (request: Request) => {
-    if (!user) return false
-    const isApprover = user.role === 'approver1' || user.role === 'approver2'
-    return isApprover && request.status === 'PENDING'
-  }
+
   
   const handleApprove = async (requestId: number) => {
     try {
@@ -123,13 +127,15 @@ export default function Requests() {
             <h1 className="text-2xl font-bold text-slate-900">Purchase Requests</h1>
             <p className="text-slate-600">Manage and track all procurement requests</p>
           </div>
-          <Link
-            to="/requests/create"
-            className="btn-primary px-4 py-2"
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            New Request
-          </Link>
+          {user?.role === 'staff' && (
+            <Link
+              to="/requests/create"
+              className="btn-primary px-4 py-2"
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              New Request
+            </Link>
+          )}
         </div>
       </motion.div>
 
@@ -211,20 +217,36 @@ export default function Requests() {
                     </button>
                     
                     {/* Approval buttons for approvers */}
-                    {canApprove(request) && (
+                    {(user?.role === 'approver1' || user?.role === 'approver2') && request.status === 'PENDING' && (
                       <div className="flex space-x-2 ml-4">
-                        <button
-                          onClick={() => handleApprove(request.id)}
-                          className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReject(request.id)}
-                          className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
-                        >
-                          Reject
-                        </button>
+                        {/* Check if current user already approved */}
+                        {request.approvals?.some(approval => 
+                          approval.approved_by === user?.username && 
+                          approval.level === (user?.role === 'approver1' ? 1 : 2) &&
+                          approval.approved === true
+                        ) ? (
+                          <button
+                            disabled
+                            className="px-3 py-1 bg-gray-400 text-white text-sm rounded-md cursor-not-allowed"
+                          >
+                            ✓ Approved
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleApprove(request.id)}
+                              className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleReject(request.id)}
+                              className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -239,7 +261,7 @@ export default function Requests() {
             <p className="mt-2 text-slate-600">
               {searchTerm ? 'Try adjusting your search criteria.' : 'Get started by creating your first request.'}
             </p>
-            {!searchTerm && (
+            {!searchTerm && user?.role === 'staff' && (
               <Link
                 to="/requests/create"
                 className="mt-4 inline-flex btn-primary px-4 py-2"

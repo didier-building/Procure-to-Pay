@@ -88,6 +88,37 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
     }
   }
 
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !request) return
+
+    const formData = new FormData()
+    formData.append('receipt', file)
+
+    try {
+      const response = await axios.post(`/api/procurement/requests/${request.id}/submit-receipt/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      
+      alert('Receipt uploaded and validated successfully!')
+      fetchRequestDetails() // Refresh data
+    } catch (error: any) {
+      alert('Error: ' + (error.response?.data?.detail || 'Failed to upload receipt'))
+    }
+  }
+
+  const handleGeneratePO = async () => {
+    if (!request) return
+
+    try {
+      const response = await axios.post(`/api/procurement/requests/${request.id}/generate-purchase-order/`)
+      alert('Purchase Order generated successfully!')
+      fetchRequestDetails() // Refresh data
+    } catch (error: any) {
+      alert('Error: ' + (error.response?.data?.error || 'Failed to generate PO'))
+    }
+  }
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'approved': return 'text-green-700 bg-green-100'
@@ -203,6 +234,34 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
                         )}
                       </div>
                     </div>
+
+                    {/* PO Generation & Receipt Upload for Approved Requests */}
+                    {request.status === 'APPROVED' && (
+                      <div className="pt-4 border-t space-y-3">
+                        {/* Generate PO Button */}
+                        <div>
+                          <button
+                            onClick={handleGeneratePO}
+                            className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Generate Purchase Order
+                          </button>
+                        </div>
+                        
+                        {/* Receipt Upload for Staff */}
+                        {request.created_by === user?.username && (
+                          <div>
+                            <h5 className="font-medium text-gray-900 mb-2">Upload Receipt</h5>
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              onChange={handleReceiptUpload}
+                              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Action Buttons */}
                     {canApprove(request) && (

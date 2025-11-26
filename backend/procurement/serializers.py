@@ -12,11 +12,11 @@ class RequestItemSerializer(serializers.ModelSerializer):
 
 
 class ApprovalSerializer(serializers.ModelSerializer):
-    approver = serializers.StringRelatedField()
+    approved_by = serializers.CharField(source='approver.username', read_only=True)
 
     class Meta:
         model = Approval
-        fields = ["id", "approver", "level", "approved", "comment", "created_at"]
+        fields = ["id", "approved_by", "level", "approved", "comment", "created_at"]
 
 
 class PurchaseRequestSerializer(serializers.ModelSerializer):

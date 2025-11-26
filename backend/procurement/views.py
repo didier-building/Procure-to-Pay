@@ -130,12 +130,67 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             'created_by', 'approved_by'
         ).prefetch_related('approvals__approver', 'items')
         
+        # Staff users see only their own requests
+        # Approvers and Finance see all requests
         if profile and getattr(profile, 'role', None) == 'staff':
             return base_queryset.filter(created_by=user).order_by('-created_at')
+        
+        # Approvers and Finance see all requests
         return base_queryset.order_by('-created_at')
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        # SECURITY FIX: Only staff can create requests
+        user = self.request.user
+        profile = getattr(user, 'profile', None)
+        
+        # Allow if user has staff role OR no profile (for backward compatibility)
+        if profile and getattr(profile, 'role', None) not in ['staff', None]:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only staff users can create purchase requests")
+        
+        instance = serializer.save(created_by=user)
+        
+        # Auto-extract proforma data if uploaded (stays PENDING for approval)
+        if instance.proforma:
+            try:
+                extracted_data = document_processor.extract_proforma_data(instance.proforma.file)
+                import json
+                from decimal import Decimal
+                def decimal_default(obj):
+                    if isinstance(obj, Decimal):
+                        return str(obj)
+                    raise TypeError
+                
+                json_str = json.dumps(extracted_data, default=decimal_default)
+                instance.proforma_data = json.loads(json_str)
+                instance.save()
+                
+                logger.info(f"Proforma data extracted for request {instance.id} - awaiting approval")
+            except Exception as e:
+                logger.warning(f"Proforma extraction failed for request {instance.id}: {str(e)}")
+        
+        return instance
+    
+    def create(self, request, *args, **kwargs):
+        """Override create to return full object with ID"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            instance = self.perform_create(serializer)
+            
+            # Return full object using the main serializer
+            response_serializer = PurchaseRequestSerializer(instance)
+            headers = self.get_success_headers(response_serializer.data)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except Exception as e:
+            logger.error(f"Create request failed: {str(e)}")
+            # If auto-processing fails, still return the created object
+            if 'instance' in locals():
+                response_serializer = PurchaseRequestSerializer(instance)
+                headers = self.get_success_headers(response_serializer.data)
+                return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            raise
     
     def perform_update(self, serializer):
         # CRITICAL FIX: Staff can only update their own requests
@@ -223,17 +278,15 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 pr_locked.status = 'APPROVED'
-                pr_locked.final_approved_by = user
+                pr_locked.approved_by = user
                 pr_locked.save()
                 
-                # CRITICAL FIX: Auto-generate PO
+                # Generate PO on final approval
                 try:
                     self._auto_generate_po(pr_locked)
-                except (ValidationError, ValueError) as e:
-                    logger.error(f"PO generation failed for request {pr_locked.id}: {str(e)}")
+                    logger.info(f"PO generated for approved request {pr_locked.id}")
                 except Exception as e:
-                    logger.exception(f"Unexpected error in PO generation for request {pr_locked.id}: {str(e)}")
-                    # Don't fail approval for PO generation errors
+                    logger.error(f"PO generation failed for request {pr_locked.id}: {str(e)}")
                 
                 return Response({"status":"APPROVED"}, status=status.HTTP_200_OK)
             return Response({"status":"PENDING", "message":"Level 1 approved; awaiting final approval."}, status=status.HTTP_200_OK)
@@ -335,60 +388,36 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     def submit_receipt(self, request, pk=None):
         pr = get_object_or_404(PurchaseRequest, pk=pk)
         
-        # CRITICAL FIX: Ownership validation
         if request.user != pr.created_by:
-            return Response({
-                "detail": "Can only submit receipts for your own requests"
-            }, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "Can only submit receipts for your own requests"}, status=status.HTTP_403_FORBIDDEN)
         
-        # Security: Validate uploaded file
+        if not pr.purchase_order_data:
+            return Response({"detail": "No PO found - upload proforma first"}, status=status.HTTP_400_BAD_REQUEST)
+        
         receipt_file = request.FILES.get('receipt')
-        if receipt_file:
-            try:
-                _validate_file_security(receipt_file)
-            except ValidationError as e:
-                return Response({
-                    "detail": str(e)
-                }, status=status.HTTP_400_BAD_REQUEST)
+        if not receipt_file:
+            return Response({"detail": "No receipt file provided"}, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = ReceiptUploadSerializer(instance=pr, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        
-        # Save the receipt file
         updated_pr = serializer.save()
         
-        # AI-powered receipt validation
-        validation_result = None
-        if updated_pr.receipt and updated_pr.purchase_order_data:
-            try:
-                # Load PO data from JSON field
-                po_data = json.loads(updated_pr.purchase_order_data) if isinstance(updated_pr.purchase_order_data, str) else updated_pr.purchase_order_data
-                
-                # Validate receipt against PO
-                validation_result = document_processor.validate_receipt(
-                    updated_pr.receipt.file, 
-                    po_data
-                )
-                
-                # Store validation results
-                updated_pr.receipt_validation_data = validation_result
-                updated_pr.save()
-                
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.error(f"Invalid PO data for request {updated_pr.id}: {str(e)}")
-                validation_result = {
-                    'error': 'Invalid purchase order data',
-                    'is_valid': False
-                }
-            except Exception as e:
-                logger.exception(f"Receipt validation failed for request {updated_pr.id}: {str(e)}")
-                validation_result = {
-                    'error': 'Receipt validation failed',
-                    'is_valid': False
-                }
+        # Validate receipt against PO - trigger error if mismatch
+        po_data = json.loads(updated_pr.purchase_order_data) if isinstance(updated_pr.purchase_order_data, str) else updated_pr.purchase_order_data
+        validation_result = document_processor.validate_receipt(updated_pr.receipt.file, po_data)
+        
+        updated_pr.receipt_validation_data = validation_result
+        updated_pr.save()
+        
+        if not validation_result.get('is_valid', False):
+            return Response({
+                'error': 'Receipt validation failed - mismatch detected',
+                'discrepancies': validation_result.get('discrepancies', []),
+                'validation': validation_result
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         return Response({
-            'message': 'Receipt uploaded successfully',
+            'message': 'Receipt validated successfully',
             'validation': validation_result
         }, status=status.HTTP_200_OK)
 
@@ -431,9 +460,12 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
         """AI-powered proforma invoice processing and data extraction."""
         pr = get_object_or_404(PurchaseRequest, pk=pk)
         
+        logger.info(f"Processing proforma for request {pk}, has proforma: {bool(pr.proforma)}")
+        
         if not pr.proforma:
             return Response({
-                'error': 'No proforma file uploaded'
+                'error': 'No proforma file uploaded',
+                'request_id': pk
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Security: Validate proforma file
