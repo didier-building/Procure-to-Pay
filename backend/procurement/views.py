@@ -173,10 +173,10 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """Override create to return full object with ID"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
         try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
             instance = self.perform_create(serializer)
             
             # Return full object using the main serializer
@@ -184,13 +184,11 @@ class PurchaseRequestViewSet(viewsets.ModelViewSet):
             headers = self.get_success_headers(response_serializer.data)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
         except Exception as e:
-            logger.error(f"Create request failed: {str(e)}")
-            # If auto-processing fails, still return the created object
-            if 'instance' in locals():
-                response_serializer = PurchaseRequestSerializer(instance)
-                headers = self.get_success_headers(response_serializer.data)
-                return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-            raise
+            logger.error(f"Create request failed: {str(e)}", exc_info=True)
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     def perform_update(self, serializer):
         # CRITICAL FIX: Staff can only update their own requests
