@@ -1,6 +1,6 @@
-# IST Africa Procure-to-Pay System
+# Procure-to-Pay System
 
-> Enterprise-grade procurement management system with multi-level approval workflow and AI document processing
+> Modern procurement management platform with automated workflows and intelligent document processing
 
 ## 🚀 Live Demo
 
@@ -281,73 +281,34 @@ Procure-to-Pay/
 └── LICENSE                           # MIT License
 ```
 
-## 🏆 IST Africa Assessment Criteria
+## 🎯 Key Features
 
-### ✅ Core Requirements Implemented
+**Workflow Management**
+- Multi-level approval process with proper sequencing
+- Role-based access control for different user types
+- Status tracking throughout the procurement lifecycle
+- Comprehensive approval history and audit trail
 
-**Multi-level Approval Workflow**
-- ✅ Level 1 → Level 2 approval sequence
-- ✅ Role-based access control (Staff, Approver1, Approver2)
-- ✅ Status tracking (PENDING → APPROVED/REJECTED)
-- ✅ Approval history and comments
+**Document Processing**
+- Intelligent proforma invoice data extraction
+- Automatic purchase order generation
+- Receipt validation with discrepancy detection
+- Support for multiple file formats (PDF, images)
 
-**AI Document Processing**
-- ✅ Proforma invoice data extraction (OCR + PDF parsing)
-- ✅ Automatic PO generation on final approval
-- ✅ Receipt validation against purchase orders
-- ✅ Mismatch detection and error reporting
+**Modern Architecture**
+- RESTful API design with comprehensive endpoints
+- Responsive web interface built with React and TypeScript
+- Real-time dashboard with procurement statistics
+- Secure file upload and management system
 
-**Modern Frontend Interface**
-- ✅ React 18 + TypeScript + Tailwind CSS
-- ✅ Responsive design with mobile support
-- ✅ Real-time dashboard and statistics
-- ✅ File upload with drag-and-drop
-- ✅ Interactive approval workflow UI
+**Production Ready**
+- Containerized deployment with Docker
+- Cloud hosting with automatic scaling
+- Comprehensive test suite with high coverage
+- Professional API documentation
 
-**Security Implementation**
-- ✅ JWT authentication with refresh tokens
-- ✅ Role-based permissions and ownership validation
-- ✅ File upload security (type/size validation)
-- ✅ CORS configuration for production
-- ✅ SQL injection prevention (Django ORM)
+## 🔗 Links
 
-**Production Deployment**
-- ✅ Backend: Render.com with PostgreSQL
-- ✅ Frontend: Netlify with CDN
-- ✅ Environment configuration
-- ✅ Automatic deployments from GitHub
-- ✅ SSL/HTTPS enabled
-
-**Comprehensive Testing & Documentation**
-- ✅ 82 automated test cases (100% passing)
-- ✅ API documentation (OpenAPI/Swagger)
-- ✅ Complete README with setup instructions
-- ✅ Code comments and docstrings
-- ✅ Error handling and logging
-
-### 🎯 Advanced Features
-
-**Virtual Environment Management**
-- UV package manager for fast dependency resolution
-- Isolated Python environments
-- Lock file for reproducible builds
-
-**AI Processing Pipeline**
-- OCR text extraction (pytesseract)
-- PDF parsing (pdfplumber, PyPDF2)
-- Regex pattern matching for data extraction
-- Fallback mechanisms for processing failures
-
-**Performance Optimizations**
-- Database query optimization with select_related/prefetch_related
-- File upload validation and security
-- Efficient serialization with proper error handling
-- Frontend code splitting and lazy loading
-
----
-
-**🚀 Built with modern tools: UV package manager, React 18, Django REST Framework**
-
-**📊 Live Demo**: https://ist-africa-procumet-o-pay.netlify.app/
-
-**📖 API Docs**: https://procure-to-pay-backend.onrender.com/api/docs/
+- **Live Application**: https://ist-africa-procumet-o-pay.netlify.app/
+- **API Documentation**: https://procure-to-pay-backend.onrender.com/api/docs/
+- **Backend API**: https://procure-to-pay-backend.onrender.com
