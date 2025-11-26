@@ -12,6 +12,7 @@ interface RequestDetails {
   amount: number
   created_at: string
   created_by: string
+  purchase_order_data?: string | null
   approvals: Array<{
     id: number
     level: number
@@ -32,6 +33,7 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
   const { user } = useAuth()
   const [request, setRequest] = useState<RequestDetails | null>(null)
   const [loading, setLoading] = useState(false)
+  const [approvalComment, setApprovalComment] = useState('')
 
   useEffect(() => {
     if (isOpen && requestId) {
@@ -55,8 +57,14 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
 
   const canApprove = (request: RequestDetails) => {
     if (!user || !request) return false
+    console.log('Debug - User:', user)
+    console.log('Debug - User role:', user.role)
+    console.log('Debug - Request status:', request.status)
     const isApprover = user.role === 'approver1' || user.role === 'approver2'
-    return isApprover && request.status === 'PENDING'
+    console.log('Debug - Is approver:', isApprover)
+    const canApproveResult = isApprover && request.status === 'PENDING'
+    console.log('Debug - Can approve:', canApproveResult)
+    return canApproveResult
   }
 
   const handleApprove = async () => {
@@ -64,8 +72,10 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
     
     try {
       await axios.patch(`/api/procurement/requests/${request.id}/approve/`, {
-        comment: `Approved by ${user?.role}`
+        comment: approvalComment || `Approved by ${user?.role}`
       })
+      alert('Request approved successfully!')
+      setApprovalComment('')
       fetchRequestDetails() // Refresh data
     } catch (error: any) {
       alert('Error: ' + (error.response?.data?.detail || 'Failed to approve request'))
@@ -157,7 +167,7 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
               <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-2xl bg-white p-6 shadow-xl transition-all">
                 <div className="flex items-center justify-between mb-6">
                   <Dialog.Title className="text-lg font-medium text-gray-900">
-                    Request Details
+                    Request Details [UPDATED VERSION]
                   </Dialog.Title>
                   <button
                     onClick={onClose}
@@ -256,15 +266,16 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
                         </div>
                         
                         {/* Receipt Upload for Staff */}
-                        {request.created_by === user?.username && (
+                        {request.created_by === user?.username && request.purchase_order_data && (
                           <div>
-                            <h5 className="font-medium text-gray-900 mb-2">Upload Receipt</h5>
+                            <h5 className="font-medium text-gray-900 mb-2">Upload Receipt for Validation</h5>
                             <input
                               type="file"
                               accept=".pdf,.png,.jpg,.jpeg"
                               onChange={handleReceiptUpload}
                               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                             />
+                            <p className="text-xs text-gray-500 mt-1">Upload receipt to validate against generated PO</p>
                           </div>
                         )}
                       </div>
@@ -272,19 +283,36 @@ export default function RequestDetailsModal({ isOpen, onClose, requestId }: Requ
 
                     {/* Action Buttons */}
                     {canApprove(request) && (
-                      <div className="flex space-x-3 pt-4 border-t">
-                        <button
-                          onClick={handleApprove}
-                          className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={handleReject}
-                          className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-                        >
-                          Reject
-                        </button>
+                      <div className="pt-4 border-t space-y-3">
+                        {/* Comment Field */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Approval Comment (Optional)
+                          </label>
+                          <textarea
+                            value={approvalComment}
+                            onChange={(e) => setApprovalComment(e.target.value)}
+                            placeholder="Add your comment..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            rows={3}
+                          />
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={handleApprove}
+                            className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={handleReject}
+                            className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
